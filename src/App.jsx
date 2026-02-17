@@ -83,7 +83,7 @@ function App() {
   const [selectedSlug, setSelectedSlug] = useState(initialProjects[0]?.slug || '');
   const [form, setForm] = useState(emptyForm);
   const [editingSlug, setEditingSlug] = useState('');
-
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projectItems));
@@ -102,6 +102,16 @@ function App() {
   const resetForm = () => {
     setForm(emptyForm);
     setEditingSlug('');
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    resetForm();
+  };
+
+  const openCreateModal = () => {
+    resetForm();
+    setIsModalOpen(true);
   };
 
   const selectFilter = (status) => {
@@ -135,7 +145,7 @@ function App() {
       );
       setProjectItems(updated);
       setSelectedSlug(editingSlug);
-      resetForm();
+      closeModal();
       return;
     }
 
@@ -151,13 +161,14 @@ function App() {
     const updated = [created, ...projectItems];
     setProjectItems(updated);
     setSelectedSlug(slug);
-    resetForm();
+    closeModal();
   };
 
   const startEdit = () => {
     if (!selectedProject) return;
     setForm(fillFormFromProject(selectedProject));
     setEditingSlug(selectedProject.slug);
+    setIsModalOpen(true);
   };
 
   const removeProject = () => {
@@ -170,10 +181,6 @@ function App() {
 
     const nextSelected = updated.find((p) => p.status === statusFilter) || updated[0];
     setSelectedSlug(nextSelected?.slug || '');
-
-    if (editingSlug === selectedProject.slug) {
-      resetForm();
-    }
   };
 
   return (
@@ -187,58 +194,20 @@ function App() {
         </p>
       </header>
 
-      <section className="section editor">
-        <div className="section-head">
-          <h2>{editingSlug ? '프로젝트 수정' : '프로젝트 추가'}</h2>
-          {editingSlug && (
-            <button type="button" className="ghost" onClick={resetForm}>
-              수정 취소
-            </button>
-          )}
-        </div>
-
-        <form className="project-form" onSubmit={handleSubmit}>
-          <input placeholder="프로젝트 제목*" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-          <div className="inline-fields">
-            <input placeholder="카테고리 (예: Web)" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
-            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-              {statusOptions.filter((s) => s !== '전체').map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-            <input placeholder="기간 (예: 2025.01 - 진행중)" value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} />
-          </div>
-          <textarea placeholder="한 줄 요약*" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} rows={2} />
-          <textarea placeholder="무엇을 위해 작업했는가*" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} rows={2} />
-          <textarea placeholder="어떻게 구현했는가*" value={form.implementation} onChange={(e) => setForm({ ...form, implementation: e.target.value })} rows={3} />
-          <input placeholder="기술 스택* (쉼표로 구분)" value={form.stack} onChange={(e) => setForm({ ...form, stack: e.target.value })} />
-          <textarea
-            placeholder={"성과 지표* (줄바꿈 구분, 형식: 항목: 값)\n예) 응답속도: 1.2초 -> 0.8초"}
-            value={form.metrics}
-            onChange={(e) => setForm({ ...form, metrics: e.target.value })}
-            rows={3}
-          />
-          <div className="inline-fields">
-            <input placeholder="운영 서비스 URL (선택)" value={form.liveUrl} onChange={(e) => setForm({ ...form, liveUrl: e.target.value })} />
-            <input placeholder="저장소 URL*" value={form.repoUrl} onChange={(e) => setForm({ ...form, repoUrl: e.target.value })} />
-          </div>
-          <button type="submit" className="primary">
-            {editingSlug ? '수정 내용 저장' : '프로젝트 추가'}
-          </button>
-        </form>
-      </section>
-
       <section className="section">
         <div className="section-head">
           <h2>프로젝트 목록</h2>
-          <div className="filters" role="group" aria-label="status filter">
-            {statusOptions.map((status) => (
-              <button key={status} type="button" className={statusFilter === status ? 'active' : ''} onClick={() => selectFilter(status)}>
-                {status}
-              </button>
-            ))}
+          <div className="toolbar">
+            <button type="button" className="primary" onClick={openCreateModal}>
+              프로젝트 추가
+            </button>
+            <div className="filters" role="group" aria-label="status filter">
+              {statusOptions.map((status) => (
+                <button key={status} type="button" className={statusFilter === status ? 'active' : ''} onClick={() => selectFilter(status)}>
+                  {status}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -318,6 +287,50 @@ function App() {
             </a>
           </div>
         </section>
+      )}
+
+      {isModalOpen && (
+        <div className="modal-overlay" role="presentation" onClick={closeModal}>
+          <section className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="section-head">
+              <h2>{editingSlug ? '프로젝트 수정' : '프로젝트 추가'}</h2>
+              <button type="button" className="ghost" onClick={closeModal}>
+                닫기
+              </button>
+            </div>
+            <form className="project-form" onSubmit={handleSubmit}>
+              <input placeholder="프로젝트 제목*" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+              <div className="inline-fields">
+                <input placeholder="카테고리 (예: Web)" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                  {statusOptions.filter((s) => s !== '전체').map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+                <input placeholder="기간 (예: 2025.01 - 진행중)" value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} />
+              </div>
+              <textarea placeholder="한 줄 요약*" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} rows={2} />
+              <textarea placeholder="무엇을 위해 작업했는가*" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} rows={2} />
+              <textarea placeholder="어떻게 구현했는가*" value={form.implementation} onChange={(e) => setForm({ ...form, implementation: e.target.value })} rows={3} />
+              <input placeholder="기술 스택* (쉼표로 구분)" value={form.stack} onChange={(e) => setForm({ ...form, stack: e.target.value })} />
+              <textarea
+                placeholder={"성과 지표* (줄바꿈 구분, 형식: 항목: 값)\n예) 응답속도: 1.2초 -> 0.8초"}
+                value={form.metrics}
+                onChange={(e) => setForm({ ...form, metrics: e.target.value })}
+                rows={3}
+              />
+              <div className="inline-fields">
+                <input placeholder="운영 서비스 URL (선택)" value={form.liveUrl} onChange={(e) => setForm({ ...form, liveUrl: e.target.value })} />
+                <input placeholder="저장소 URL*" value={form.repoUrl} onChange={(e) => setForm({ ...form, repoUrl: e.target.value })} />
+              </div>
+              <button type="submit" className="primary">
+                {editingSlug ? '수정 내용 저장' : '프로젝트 추가'}
+              </button>
+            </form>
+          </section>
+        </div>
       )}
     </div>
   );
