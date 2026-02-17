@@ -171,3 +171,64 @@ body {
   background: #e5e7eb;
   color: #6b7280;
 }
+
+.editor {
+  border: 1px solid #e5e7eb;
+}
+
+.project-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.project-form input,
+.project-form select,
+.project-form textarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+}
+
+.inline-fields {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.primary,
+.ghost,
+.danger {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.primary {
+  background: #111827;
+  color: #fff;
+}
+
+.ghost {
+  border-color: #d1d5db;
+  background: #fff;
+}
+
+.danger {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.empty {
+  color: #6b7280;
+  font-size: 0.95rem;
+}
