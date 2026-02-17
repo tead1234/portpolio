@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { projects as initialProjects } from './data/projects';
 
 const statusOptions = ['전체', '운영중', '완료', 'PoC'];
-const STORAGE_KEY = 'portfolio-projects-v1';
+const STORAGE_KEY = 'portfolio-projects-v2';
+
 const emptyForm = {
   title: '',
   category: 'Web',
@@ -14,8 +15,20 @@ const emptyForm = {
   stack: '',
   metrics: '',
   liveUrl: '',
-  repoUrl: ''
+  repoUrl: '',
+  difficulty: '5',
+  users: '500',
+  cost: '50'
 };
+
+const pastelPalette = [
+  ['#FFE6EA', '#FFD6E0'],
+  ['#E7F4FF', '#D9EEFF'],
+  ['#EAFBE7', '#DDF7D9'],
+  ['#FFF5DF', '#FFEBC8'],
+  ['#F2EBFF', '#E8DDFF'],
+  ['#E6FAF8', '#D4F4F0']
+];
 
 const toSlug = (text) =>
   text
@@ -24,6 +37,17 @@ const toSlug = (text) =>
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-');
+
+const clampStat = (value, min, max) => Math.min(max, Math.max(min, Number(value) || min));
+
+const normalizeProject = (project) => ({
+  ...project,
+  stats: {
+    difficulty: clampStat(project?.stats?.difficulty ?? 5, 1, 10),
+    users: clampStat(project?.stats?.users ?? 500, 0, 10000),
+    cost: clampStat(project?.stats?.cost ?? 50, 0, 100)
+  }
+});
 
 const serializeForm = (form) => ({
   title: form.title.trim(),
@@ -50,7 +74,12 @@ const serializeForm = (form) => ({
     })
     .filter((metric) => metric.label && metric.value),
   liveUrl: form.liveUrl.trim(),
-  repoUrl: form.repoUrl.trim()
+  repoUrl: form.repoUrl.trim(),
+  stats: {
+    difficulty: clampStat(form.difficulty, 1, 10),
+    users: clampStat(form.users, 0, 10000),
+    cost: clampStat(form.cost, 0, 100)
+  }
 });
 
 const fillFormFromProject = (project) => ({
@@ -64,26 +93,79 @@ const fillFormFromProject = (project) => ({
   stack: project.stack.join(', '),
   metrics: project.metrics.map((metric) => `${metric.label}: ${metric.value}`).join('\n'),
   liveUrl: project.liveUrl,
-  repoUrl: project.repoUrl
+  repoUrl: project.repoUrl,
+  difficulty: String(project.stats.difficulty),
+  users: String(project.stats.users),
+  cost: String(project.stats.cost)
 });
+
+function Sparkline({ stats }) {
+  const items = [
+    { key: 'difficulty', label: '난이도', value: stats.difficulty, max: 10, x: 30 },
+    { key: 'users', label: '사용자수', value: stats.users, max: 10000, x: 90 },
+    { key: 'cost', label: '개발비용', value: stats.cost, max: 100, x: 150 }
+  ];
+
+  const points = items.map((item) => ({
+    ...item,
+    ratio: item.value / item.max,
+    y: 84 - (item.value / item.max) * 58
+  }));
+
+  return (
+    <div className="spark-wrap">
+      <svg viewBox="0 0 180 100" aria-label="성과 그래프" className="spark-chart">
+        <line x1="12" y1="84" x2="168" y2="84" stroke="#94a3b8" strokeWidth="1" />
+        {points.map((p) => (
+          <rect
+            key={`${p.key}-bar`}
+            x={p.x - 12}
+            y={84 - p.ratio * 58}
+            width="24"
+            height={p.ratio * 58}
+            rx="4"
+            fill="#a5b4fc88"
+          />
+        ))}
+        <polyline points={points.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#4f46e5" strokeWidth="3" />
+        {points.map((p) => (
+          <circle key={p.key} cx={p.x} cy={p.y} r="4" fill="#3730a3" />
+        ))}
+      </svg>
+      <div className="spark-legend">
+        <span>난이도 {stats.difficulty}/10</span>
+        <span>사용자수 {stats.users.toLocaleString()}/10,000</span>
+        <span>개발비용 {stats.cost}/100</span>
+      </div>
+      <div className="spark-criteria">
+        <span>기준: 난이도(1~10, 높을수록 복잡)</span>
+        <span>기준: 사용자수(0~10,000, 높을수록 서비스 확장)</span>
+        <span>기준: 개발비용(0~100, 높을수록 비용 큼)</span>
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const [projectItems, setProjectItems] = useState(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (!saved) return initialProjects;
+    if (!saved) return initialProjects.map(normalizeProject);
 
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : initialProjects;
+      if (!Array.isArray(parsed) || parsed.length === 0) return initialProjects.map(normalizeProject);
+      return parsed.map(normalizeProject);
     } catch {
-      return initialProjects;
+      return initialProjects.map(normalizeProject);
     }
   });
+
   const [statusFilter, setStatusFilter] = useState('전체');
-  const [selectedSlug, setSelectedSlug] = useState(initialProjects[0]?.slug || '');
+  const [selectedSlug, setSelectedSlug] = useState(projectItems[0]?.slug || '');
   const [form, setForm] = useState(emptyForm);
   const [editingSlug, setEditingSlug] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projectItems));
@@ -104,21 +186,29 @@ function App() {
     setEditingSlug('');
   };
 
-  const closeModal = () => {
-    setIsModalOpen(false);
-    resetForm();
-  };
-
   const openCreateModal = () => {
     resetForm();
-    setIsModalOpen(true);
+    setIsEditorOpen(true);
   };
 
-  const selectFilter = (status) => {
-    setStatusFilter(status);
-    const first = (status === '전체' ? projectItems : projectItems.filter((p) => p.status === status))[0];
-    setSelectedSlug(first?.slug || '');
+  const openEditModal = () => {
+    if (!selectedProject) return;
+    setForm(fillFormFromProject(selectedProject));
+    setEditingSlug(selectedProject.slug);
+    setIsEditorOpen(true);
   };
+
+  const closeEditorModal = () => {
+    setIsEditorOpen(false);
+    resetForm();
+  };
+
+  const openDetailModal = (project) => {
+    setSelectedSlug(project.slug);
+    setIsDetailOpen(true);
+  };
+
+  const closeDetailModal = () => setIsDetailOpen(false);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -129,13 +219,8 @@ function App() {
       return;
     }
 
-    if (next.stack.length === 0) {
-      alert('기술 스택을 1개 이상 입력하세요.');
-      return;
-    }
-
-    if (next.metrics.length === 0) {
-      alert('성과 지표를 1개 이상 입력하세요. (형식: 항목: 값)');
+    if (next.stack.length === 0 || next.metrics.length === 0) {
+      alert('기술 스택과 성과 지표를 최소 1개 이상 입력하세요.');
       return;
     }
 
@@ -145,7 +230,7 @@ function App() {
       );
       setProjectItems(updated);
       setSelectedSlug(editingSlug);
-      closeModal();
+      setIsEditorOpen(false);
       return;
     }
 
@@ -158,17 +243,9 @@ function App() {
     }
 
     const created = { ...next, slug };
-    const updated = [created, ...projectItems];
-    setProjectItems(updated);
+    setProjectItems([created, ...projectItems]);
     setSelectedSlug(slug);
-    closeModal();
-  };
-
-  const startEdit = () => {
-    if (!selectedProject) return;
-    setForm(fillFormFromProject(selectedProject));
-    setEditingSlug(selectedProject.slug);
-    setIsModalOpen(true);
+    setIsEditorOpen(false);
   };
 
   const removeProject = () => {
@@ -178,32 +255,28 @@ function App() {
 
     const updated = projectItems.filter((project) => project.slug !== selectedProject.slug);
     setProjectItems(updated);
-
-    const nextSelected = updated.find((p) => p.status === statusFilter) || updated[0];
-    setSelectedSlug(nextSelected?.slug || '');
+    setSelectedSlug(updated[0]?.slug || '');
+    setIsDetailOpen(false);
   };
 
   return (
-    <div className="layout">
-      <header className="hero">
+    <div className="layout pastel-bg">
+      <header className="hero soft-card">
         <p className="hero-kicker">PORTFOLIO</p>
-        <h1>내가 만든 프로젝트를 문제-구현-성과 중심으로 보여주는 공간</h1>
-        <p>
-          프로젝트가 계속 추가되어도 같은 템플릿으로 확장 가능하게 구성했습니다. 운영중인 서비스는
-          즉시 접속 링크를 제공합니다.
-        </p>
+        <h1>타일형 포트폴리오 갤러리</h1>
+        <p>카드를 호버하면 확대/지표 선그래프를 확인하고, 클릭하면 세부정보를 확인할 수 있습니다.</p>
       </header>
 
-      <section className="section">
+      <section className="section soft-card">
         <div className="section-head">
-          <h2>프로젝트 목록</h2>
+          <h2>프로젝트 타일</h2>
           <div className="toolbar">
             <button type="button" className="primary" onClick={openCreateModal}>
               프로젝트 추가
             </button>
             <div className="filters" role="group" aria-label="status filter">
               {statusOptions.map((status) => (
-                <button key={status} type="button" className={statusFilter === status ? 'active' : ''} onClick={() => selectFilter(status)}>
+                <button key={status} type="button" className={statusFilter === status ? 'active' : ''} onClick={() => setStatusFilter(status)}>
                   {status}
                 </button>
               ))}
@@ -211,97 +284,97 @@ function App() {
           </div>
         </div>
 
-        <div className="grid">
-          {filteredProjects.map((project) => (
-            <article
-              key={project.slug}
-              className={`card ${selectedProject?.slug === project.slug ? 'selected' : ''}`}
-              onClick={() => setSelectedSlug(project.slug)}
-            >
-              <div className="card-head">
-                <span className="badge">{project.category}</span>
-                <span className="status">{project.status}</span>
-              </div>
-              <h3>{project.title}</h3>
-              <p className="summary">{project.summary}</p>
-              <p className="goal">
-                <strong>목표:</strong> {project.goal}
-              </p>
-              <div className="stack-list">
-                {project.stack.map((tech) => (
-                  <span key={tech}>{tech}</span>
-                ))}
-              </div>
-            </article>
-          ))}
-          {filteredProjects.length === 0 && <p className="empty">해당 상태의 프로젝트가 없습니다.</p>}
+        <div className="tile-grid">
+          {filteredProjects.map((project, index) => {
+            const [from, to] = pastelPalette[index % pastelPalette.length];
+            return (
+              <button
+                key={project.slug}
+                type="button"
+                className="tile-card"
+                style={{ background: `linear-gradient(145deg, ${from}, ${to})` }}
+                onClick={() => openDetailModal(project)}
+              >
+                <div className="tile-top">
+                  <span className="badge">{project.category}</span>
+                  <span className="status">{project.status}</span>
+                </div>
+                <h3>{project.title}</h3>
+                <p>{project.summary}</p>
+                <Sparkline stats={project.stats} />
+              </button>
+            );
+          })}
         </div>
       </section>
 
-      {selectedProject && (
-        <section className="section detail">
-          <div className="section-head">
-            <h2>프로젝트 상세: {selectedProject.title}</h2>
+      {isDetailOpen && selectedProject && (
+        <div className="modal-overlay" onClick={closeDetailModal}>
+          <section className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="section-head">
+              <h2>{selectedProject.title}</h2>
+              <button type="button" className="ghost" onClick={closeDetailModal}>
+                닫기
+              </button>
+            </div>
+            <p className="period">기간: {selectedProject.period}</p>
+            <Sparkline stats={selectedProject.stats} />
+
+            <div className="detail-block">
+              <h3>무엇을 위해 작업했는가</h3>
+              <p>{selectedProject.goal}</p>
+            </div>
+            <div className="detail-block">
+              <h3>어떻게 구현했는가</h3>
+              <p>{selectedProject.implementation}</p>
+            </div>
+            <div className="detail-block">
+              <h3>성과</h3>
+              <ul>
+                {selectedProject.metrics.map((metric) => (
+                  <li key={metric.label}>
+                    <strong>{metric.label}:</strong> {metric.value}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
             <div className="actions">
-              <button type="button" className="ghost" onClick={startEdit}>
+              <button type="button" className="ghost" onClick={openEditModal}>
                 수정
               </button>
               <button type="button" className="danger" onClick={removeProject}>
                 삭제
               </button>
-            </div>
-          </div>
-          <p className="period">기간: {selectedProject.period}</p>
-
-          <div className="detail-block">
-            <h3>무엇을 위해 작업했는가</h3>
-            <p>{selectedProject.goal}</p>
-          </div>
-
-          <div className="detail-block">
-            <h3>어떻게 구현했는가</h3>
-            <p>{selectedProject.implementation}</p>
-          </div>
-
-          <div className="detail-block">
-            <h3>성과는 어느 정도인가</h3>
-            <ul>
-              {selectedProject.metrics.map((metric) => (
-                <li key={metric.label}>
-                  <strong>{metric.label}:</strong> {metric.value}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="links">
-            {selectedProject.liveUrl ? (
-              <a href={selectedProject.liveUrl} target="_blank" rel="noreferrer">
-                서비스 이용하기
+              {selectedProject.liveUrl ? (
+                <a href={selectedProject.liveUrl} target="_blank" rel="noreferrer">
+                  서비스 이용하기
+                </a>
+              ) : (
+                <span className="disabled-link">현재 공개 서비스 없음</span>
+              )}
+              <a href={selectedProject.repoUrl} target="_blank" rel="noreferrer">
+                저장소 보기
               </a>
-            ) : (
-              <span className="disabled-link">현재 공개 서비스 없음</span>
-            )}
-            <a href={selectedProject.repoUrl} target="_blank" rel="noreferrer">
-              저장소 보기
-            </a>
-          </div>
-        </section>
+            </div>
+          </section>
+        </div>
       )}
 
-      {isModalOpen && (
-        <div className="modal-overlay" role="presentation" onClick={closeModal}>
-          <section className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+      {isEditorOpen && (
+        <div className="modal-overlay" onClick={closeEditorModal}>
+          <section className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="section-head">
               <h2>{editingSlug ? '프로젝트 수정' : '프로젝트 추가'}</h2>
-              <button type="button" className="ghost" onClick={closeModal}>
+              <button type="button" className="ghost" onClick={closeEditorModal}>
                 닫기
               </button>
             </div>
+
             <form className="project-form" onSubmit={handleSubmit}>
               <input placeholder="프로젝트 제목*" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
               <div className="inline-fields">
-                <input placeholder="카테고리 (예: Web)" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+                <input placeholder="카테고리" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
                 <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                   {statusOptions.filter((s) => s !== '전체').map((status) => (
                     <option key={status} value={status}>
@@ -309,24 +382,35 @@ function App() {
                     </option>
                   ))}
                 </select>
-                <input placeholder="기간 (예: 2025.01 - 진행중)" value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} />
+                <input placeholder="기간" value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} />
               </div>
               <textarea placeholder="한 줄 요약*" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} rows={2} />
-              <textarea placeholder="무엇을 위해 작업했는가*" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} rows={2} />
-              <textarea placeholder="어떻게 구현했는가*" value={form.implementation} onChange={(e) => setForm({ ...form, implementation: e.target.value })} rows={3} />
-              <input placeholder="기술 스택* (쉼표로 구분)" value={form.stack} onChange={(e) => setForm({ ...form, stack: e.target.value })} />
-              <textarea
-                placeholder={"성과 지표* (줄바꿈 구분, 형식: 항목: 값)\n예) 응답속도: 1.2초 -> 0.8초"}
-                value={form.metrics}
-                onChange={(e) => setForm({ ...form, metrics: e.target.value })}
-                rows={3}
-              />
+              <textarea placeholder="목표*" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} rows={2} />
+              <textarea placeholder="구현 내용*" value={form.implementation} onChange={(e) => setForm({ ...form, implementation: e.target.value })} rows={3} />
+              <input placeholder="기술 스택* (쉼표)" value={form.stack} onChange={(e) => setForm({ ...form, stack: e.target.value })} />
+              <textarea placeholder="성과 지표* (형식: 항목: 값)" value={form.metrics} onChange={(e) => setForm({ ...form, metrics: e.target.value })} rows={3} />
+
               <div className="inline-fields">
-                <input placeholder="운영 서비스 URL (선택)" value={form.liveUrl} onChange={(e) => setForm({ ...form, liveUrl: e.target.value })} />
+                <label>
+                  기술적 난이도 (1~10)
+                  <input type="number" min="1" max="10" value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })} />
+                </label>
+                <label>
+                  실제 사용자 수 (0~10000)
+                  <input type="number" min="0" max="10000" value={form.users} onChange={(e) => setForm({ ...form, users: e.target.value })} />
+                </label>
+                <label>
+                  개발비용 지수 (0~100)
+                  <input type="number" min="0" max="100" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} />
+                </label>
+              </div>
+
+              <div className="inline-fields">
+                <input placeholder="운영 서비스 URL" value={form.liveUrl} onChange={(e) => setForm({ ...form, liveUrl: e.target.value })} />
                 <input placeholder="저장소 URL*" value={form.repoUrl} onChange={(e) => setForm({ ...form, repoUrl: e.target.value })} />
               </div>
               <button type="submit" className="primary">
-                {editingSlug ? '수정 내용 저장' : '프로젝트 추가'}
+                {editingSlug ? '수정 저장' : '프로젝트 추가'}
               </button>
             </form>
           </section>
