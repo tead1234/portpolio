@@ -34,3 +34,8 @@ docker compose down
 ```bash
 npm run build
 ```
+
+## 참고
+
+- 현재 저장소 기본 작업 브랜치는 `work` 입니다.
+
