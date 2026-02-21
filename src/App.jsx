@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { projects as initialProjects } from './data/projects';
 
 const statusOptions = ['전체', '운영중', '완료', 'PoC'];
-const STORAGE_KEY = 'portfolio-projects-v2';
+const STORAGE_KEY = 'portfolio-projects-v3';
 
 const emptyForm = {
   title: '',
@@ -16,9 +16,10 @@ const emptyForm = {
   metrics: '',
   liveUrl: '',
   repoUrl: '',
-  difficulty: '5',
-  users: '500',
-  cost: '50'
+  difficulty: '3',
+  novelty: '3',
+  impact: '3',
+  scalability: '3'
 };
 
 const pastelPalette = [
@@ -38,14 +39,15 @@ const toSlug = (text) =>
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-');
 
-const clampStat = (value, min, max) => Math.min(max, Math.max(min, Number(value) || min));
+const clamp5 = (value) => Math.min(5, Math.max(1, Number(value) || 1));
 
 const normalizeProject = (project) => ({
   ...project,
   stats: {
-    difficulty: clampStat(project?.stats?.difficulty ?? 5, 1, 10),
-    users: clampStat(project?.stats?.users ?? 500, 0, 10000),
-    cost: clampStat(project?.stats?.cost ?? 50, 0, 100)
+    difficulty: clamp5(project?.stats?.difficulty ?? 3),
+    novelty: clamp5(project?.stats?.novelty ?? 3),
+    impact: clamp5(project?.stats?.impact ?? 3),
+    scalability: clamp5(project?.stats?.scalability ?? 3)
   }
 });
 
@@ -76,9 +78,10 @@ const serializeForm = (form) => ({
   liveUrl: form.liveUrl.trim(),
   repoUrl: form.repoUrl.trim(),
   stats: {
-    difficulty: clampStat(form.difficulty, 1, 10),
-    users: clampStat(form.users, 0, 10000),
-    cost: clampStat(form.cost, 0, 100)
+    difficulty: clamp5(form.difficulty),
+    novelty: clamp5(form.novelty),
+    impact: clamp5(form.impact),
+    scalability: clamp5(form.scalability)
   }
 });
 
@@ -95,52 +98,75 @@ const fillFormFromProject = (project) => ({
   liveUrl: project.liveUrl,
   repoUrl: project.repoUrl,
   difficulty: String(project.stats.difficulty),
-  users: String(project.stats.users),
-  cost: String(project.stats.cost)
+  novelty: String(project.stats.novelty),
+  impact: String(project.stats.impact),
+  scalability: String(project.stats.scalability)
 });
 
-function Sparkline({ stats }) {
-  const items = [
-    { key: 'difficulty', label: '난이도', value: stats.difficulty, max: 10, x: 30 },
-    { key: 'users', label: '사용자수', value: stats.users, max: 10000, x: 90 },
-    { key: 'cost', label: '개발비용', value: stats.cost, max: 100, x: 150 }
+function RadarChart({ stats }) {
+  const axes = [
+    { key: 'difficulty', label: '구현 난이도', angle: -90, value: stats.difficulty },
+    { key: 'novelty', label: '신기술 사용도', angle: 0, value: stats.novelty },
+    { key: 'impact', label: '사용자 임팩트', angle: 90, value: stats.impact },
+    { key: 'scalability', label: '확장성', angle: 180, value: stats.scalability }
   ];
 
-  const points = items.map((item) => ({
-    ...item,
-    ratio: item.value / item.max,
-    y: 84 - (item.value / item.max) * 58
-  }));
+  const center = 70;
+  const radius = 48;
+
+  const toXY = (angleDeg, ratio) => {
+    const rad = (angleDeg * Math.PI) / 180;
+    return {
+      x: center + Math.cos(rad) * radius * ratio,
+      y: center + Math.sin(rad) * radius * ratio
+    };
+  };
+
+  const valuePoints = axes.map((axis) => toXY(axis.angle, axis.value / 5));
 
   return (
     <div className="spark-wrap">
-      <svg viewBox="0 0 180 100" aria-label="성과 그래프" className="spark-chart">
-        <line x1="12" y1="84" x2="168" y2="84" stroke="#94a3b8" strokeWidth="1" />
-        {points.map((p) => (
-          <rect
-            key={`${p.key}-bar`}
-            x={p.x - 12}
-            y={84 - p.ratio * 58}
-            width="24"
-            height={p.ratio * 58}
-            rx="4"
-            fill="#a5b4fc88"
-          />
-        ))}
-        <polyline points={points.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#4f46e5" strokeWidth="3" />
-        {points.map((p) => (
-          <circle key={p.key} cx={p.x} cy={p.y} r="4" fill="#3730a3" />
+      <svg viewBox="0 0 140 140" aria-label="4축 레이더 차트" className="spark-chart">
+        {[1, 2, 3, 4, 5].map((level) => {
+          const ratio = level / 5;
+          const poly = axes.map((axis) => {
+            const p = toXY(axis.angle, ratio);
+            return `${p.x},${p.y}`;
+          });
+          return (
+            <polygon
+              key={level}
+              points={poly.join(' ')}
+              fill="none"
+              stroke={level === 5 ? '#94a3b8' : '#cbd5e1'}
+              strokeWidth="1"
+            />
+          );
+        })}
+
+        {axes.map((axis) => {
+          const p = toXY(axis.angle, 1);
+          return <line key={axis.key} x1={center} y1={center} x2={p.x} y2={p.y} stroke="#94a3b8" strokeWidth="1" />;
+        })}
+
+        <polygon points={valuePoints.map((p) => `${p.x},${p.y}`).join(' ')} fill="#8b5cf633" stroke="#7c3aed" strokeWidth="2" />
+        {valuePoints.map((p, idx) => (
+          <circle key={axes[idx].key} cx={p.x} cy={p.y} r="3" fill="#6d28d9" />
         ))}
       </svg>
+
       <div className="spark-legend">
-        <span>난이도 {stats.difficulty}/10</span>
-        <span>사용자수 {stats.users.toLocaleString()}/10,000</span>
-        <span>개발비용 {stats.cost}/100</span>
+        <span>구현 난이도 {stats.difficulty}/5</span>
+        <span>신기술 사용도 {stats.novelty}/5</span>
+        <span>사용자 임팩트 {stats.impact}/5</span>
+        <span>확장성 {stats.scalability}/5</span>
       </div>
+
       <div className="spark-criteria">
-        <span>기준: 난이도(1~10, 높을수록 복잡)</span>
-        <span>기준: 사용자수(0~10,000, 높을수록 서비스 확장)</span>
-        <span>기준: 개발비용(0~100, 높을수록 비용 큼)</span>
+        <span>기준점: 1(낮음) · 3(중간) · 5(매우 높음)</span>
+        <span>난이도: 5에 가까울수록 설계/구현 복잡도 높음</span>
+        <span>신기술: 5에 가까울수록 신규 기술/실험 비중 높음</span>
+        <span>임팩트·확장성: 5에 가까울수록 사용자 가치/재사용성 높음</span>
       </div>
     </div>
   );
@@ -262,7 +288,8 @@ function App() {
   return (
     <div className="layout pastel-bg">
       <header className="hero soft-card">
-        <p className="hero-kicker">What to do?</p>
+        <p className="hero-kicker">PORTFOLIO</p>
+     
       </header>
 
       <section className="section soft-card">
@@ -299,7 +326,7 @@ function App() {
                 </div>
                 <h3>{project.title}</h3>
                 <p>{project.summary}</p>
-                <Sparkline stats={project.stats} />
+                <RadarChart stats={project.stats} />
               </button>
             );
           })}
@@ -316,7 +343,7 @@ function App() {
               </button>
             </div>
             <p className="period">기간: {selectedProject.period}</p>
-            <Sparkline stats={selectedProject.stats} />
+            <RadarChart stats={selectedProject.stats} />
 
             <div className="detail-block">
               <h3>무엇을 위해 작업했는가</h3>
@@ -390,16 +417,20 @@ function App() {
 
               <div className="inline-fields">
                 <label>
-                  기술적 난이도 (1~10)
-                  <input type="number" min="1" max="10" value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })} />
+                  구현 난이도 (1~5)
+                  <input type="number" min="1" max="5" value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })} />
                 </label>
                 <label>
-                  실제 사용자 수 (0~10000)
-                  <input type="number" min="0" max="10000" value={form.users} onChange={(e) => setForm({ ...form, users: e.target.value })} />
+                  신기술 사용도 (1~5)
+                  <input type="number" min="1" max="5" value={form.novelty} onChange={(e) => setForm({ ...form, novelty: e.target.value })} />
                 </label>
                 <label>
-                  개발비용 지수 (0~100)
-                  <input type="number" min="0" max="100" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} />
+                  사용자 임팩트 (1~5)
+                  <input type="number" min="1" max="5" value={form.impact} onChange={(e) => setForm({ ...form, impact: e.target.value })} />
+                </label>
+                <label>
+                  확장성 (1~5)
+                  <input type="number" min="1" max="5" value={form.scalability} onChange={(e) => setForm({ ...form, scalability: e.target.value })} />
                 </label>
               </div>
 
