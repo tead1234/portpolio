@@ -43,8 +43,14 @@ body {
 }
 
 .hero h1 {
-  margin: 0 0 10px;
+  margin: 0 0 6px;
   font-size: clamp(1.4rem, 3vw, 2.1rem);
+}
+
+.hero-subtitle {
+  margin: 0 0 10px;
+  color: #334155;
+  font-weight: 600;
 }
 
 .section {

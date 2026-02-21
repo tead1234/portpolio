@@ -299,12 +299,14 @@ function App() {
     <div className="layout pastel-bg">
       <header className="hero soft-card">
         <p className="hero-kicker">PORTFOLIO</p>
-     
+        <h1>Portpolio</h1>
+        <p className="hero-subtitle">프로덕트 엔지니어로서 고명섭이 만든 것들</p>
+        <p>카드를 호버하면 확대/레이더 그래프를 확인하고, 클릭하면 세부정보를 확인할 수 있습니다.</p>
       </header>
 
       <section className="section soft-card">
         <div className="section-head">
-          <h2>프로젝트 타일</h2>
+          <h2>Projects</h2>
           <div className="toolbar">
             <button type="button" className="primary" onClick={openCreateModal}>
               프로젝트 추가
