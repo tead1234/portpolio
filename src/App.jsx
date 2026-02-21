@@ -149,6 +149,16 @@ function RadarChart({ stats }) {
           return <line key={axis.key} x1={center} y1={center} x2={p.x} y2={p.y} stroke="#94a3b8" strokeWidth="1" />;
         })}
 
+        {axes.map((axis) => {
+          const p = toXY(axis.angle, 1.22);
+          const anchor = axis.angle === 0 ? 'start' : axis.angle === 180 ? 'end' : 'middle';
+          return (
+            <text key={`${axis.key}-label`} x={p.x} y={p.y} textAnchor={anchor} className="radar-axis-label">
+              {axis.label}
+            </text>
+          );
+        })}
+
         <polygon points={valuePoints.map((p) => `${p.x},${p.y}`).join(' ')} fill="#8b5cf633" stroke="#7c3aed" strokeWidth="2" />
         {valuePoints.map((p, idx) => (
           <circle key={axes[idx].key} cx={p.x} cy={p.y} r="3" fill="#6d28d9" />

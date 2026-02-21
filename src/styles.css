@@ -163,6 +163,12 @@ body {
   color: #334155;
 }
 
+.radar-axis-label {
+  font-size: 7px;
+  fill: #334155;
+  font-weight: 600;
+}
+
 .spark-criteria {
   margin-top: 6px;
   display: grid;
