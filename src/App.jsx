@@ -262,9 +262,7 @@ function App() {
   return (
     <div className="layout pastel-bg">
       <header className="hero soft-card">
-        <p className="hero-kicker">PORTFOLIO</p>
-        <h1>타일형 포트폴리오 갤러리</h1>
-        <p>카드를 호버하면 확대/지표 선그래프를 확인하고, 클릭하면 세부정보를 확인할 수 있습니다.</p>
+        <p className="hero-kicker">What to do?</p>
       </header>
 
       <section className="section soft-card">
