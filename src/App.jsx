@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { projects as initialProjects } from './data/projects';
 
 const statusOptions = ['전체', '운영중', '완료', 'PoC'];
-const STORAGE_KEY = 'portfolio-projects-v3';
-const ADMIN_SESSION_KEY = 'portfolio-admin-session-v1';
-const ADMIN_PASSWORD = 'admin1234';
+const ADMIN_TOKEN_KEY = 'portfolio-admin-token-v1';
 
 const emptyForm = {
   title: '',
@@ -127,15 +124,7 @@ function RadarChart({ stats }) {
             const p = toXY(axis.angle, ratio);
             return `${p.x},${p.y}`;
           });
-          return (
-            <polygon
-              key={level}
-              points={poly.join(' ')}
-              fill="none"
-              stroke={level === 5 ? '#94a3b8' : '#cbd5e1'}
-              strokeWidth="1"
-            />
-          );
+          return <polygon key={level} points={poly.join(' ')} fill="none" stroke={level === 5 ? '#94a3b8' : '#cbd5e1'} strokeWidth="1" />;
         })}
 
         {axes.map((axis) => {
@@ -165,45 +154,39 @@ function RadarChart({ stats }) {
         <span>사용자 임팩트 {stats.impact}/5</span>
         <span>확장성 {stats.scalability}/5</span>
       </div>
-
-      <div className="spark-criteria">
-        <span>기준점: 1(낮음) · 3(중간) · 5(매우 높음)</span>
-        <span>난이도: 5에 가까울수록 설계/구현 복잡도 높음</span>
-        <span>신기술: 5에 가까울수록 신규 기술/실험 비중 높음</span>
-        <span>임팩트·확장성: 5에 가까울수록 사용자 가치/재사용성 높음</span>
-      </div>
     </div>
   );
 }
 
 function App() {
-  const [projectItems, setProjectItems] = useState(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (!saved) return initialProjects.map(normalizeProject);
-
-    try {
-      const parsed = JSON.parse(saved);
-      if (!Array.isArray(parsed) || parsed.length === 0) return initialProjects.map(normalizeProject);
-      return parsed.map(normalizeProject);
-    } catch {
-      return initialProjects.map(normalizeProject);
-    }
-  });
-
+  const [projectItems, setProjectItems] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('전체');
-  const [selectedSlug, setSelectedSlug] = useState(projectItems[0]?.slug || '');
+  const [selectedSlug, setSelectedSlug] = useState('');
   const [form, setForm] = useState(emptyForm);
   const [editingSlug, setEditingSlug] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(() => window.localStorage.getItem(ADMIN_SESSION_KEY) === 'true');
+
+  const [adminToken, setAdminToken] = useState(() => window.localStorage.getItem(ADMIN_TOKEN_KEY) || '');
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [adminUsername, setAdminUsername] = useState('admin');
   const [adminPassword, setAdminPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
+  const isAdmin = Boolean(adminToken);
+
+  const loadProjects = async () => {
+    const res = await fetch('/api/projects');
+    const data = await res.json();
+    const normalized = data.map(normalizeProject);
+    setProjectItems(normalized);
+    if (!selectedSlug && normalized[0]) setSelectedSlug(normalized[0].slug);
+  };
+
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projectItems));
-  }, [projectItems]);
+    loadProjects().finally(() => setLoading(false));
+  }, []);
 
   const filteredProjects = useMemo(() => {
     if (statusFilter === '전체') return projectItems;
@@ -221,10 +204,7 @@ function App() {
   };
 
   const openCreateModal = () => {
-    if (!isAdmin) {
-      setIsLoginOpen(true);
-      return;
-    }
+    if (!isAdmin) return setIsLoginOpen(true);
     resetForm();
     setIsEditorOpen(true);
   };
@@ -241,53 +221,48 @@ function App() {
     resetForm();
   };
 
-  const openDetailModal = (project) => {
-    setSelectedSlug(project.slug);
-    setIsDetailOpen(true);
-  };
-
-  const closeDetailModal = () => setIsDetailOpen(false);
-
-  const handleAdminLogin = (event) => {
+  const handleAdminLogin = async (event) => {
     event.preventDefault();
-    if (adminPassword !== ADMIN_PASSWORD) {
-      setAuthError('관리자 비밀번호가 올바르지 않습니다.');
+    setAuthError('');
+    const res = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: adminUsername, password: adminPassword })
+    });
+
+    if (!res.ok) {
+      setAuthError('관리자 계정 정보가 올바르지 않습니다.');
       return;
     }
-    window.localStorage.setItem(ADMIN_SESSION_KEY, 'true');
-    setIsAdmin(true);
+
+    const data = await res.json();
+    window.localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+    setAdminToken(data.token);
     setIsLoginOpen(false);
     setAdminPassword('');
-    setAuthError('');
   };
 
   const handleAdminLogout = () => {
-    window.localStorage.removeItem(ADMIN_SESSION_KEY);
-    setIsAdmin(false);
+    window.localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setAdminToken('');
     setIsEditorOpen(false);
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!isAdmin) return;
 
     const next = serializeForm(form);
-
-    if (!next.title || !next.summary || !next.goal || !next.implementation) {
-      alert('제목, 요약, 목표, 구현 내용은 필수입니다.');
-      return;
-    }
-
-    if (next.stack.length === 0) {
-      alert('기술 스택을 최소 1개 이상 입력하세요.');
-      return;
-    }
+    if (!next.title || !next.summary || !next.goal || !next.implementation) return alert('제목, 요약, 목표, 구현 내용은 필수입니다.');
+    if (next.stack.length === 0) return alert('기술 스택을 최소 1개 이상 입력하세요.');
 
     if (editingSlug) {
-      const updated = projectItems.map((project) =>
-        project.slug === editingSlug ? { ...project, ...next, slug: editingSlug } : project
-      );
-      setProjectItems(updated);
+      await fetch(`/api/projects/${editingSlug}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ ...next, slug: editingSlug })
+      });
+      await loadProjects();
       setSelectedSlug(editingSlug);
       setIsEditorOpen(false);
       return;
@@ -301,22 +276,31 @@ function App() {
       suffix += 1;
     }
 
-    const created = { ...next, slug };
-    setProjectItems([created, ...projectItems]);
+    await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ ...next, slug })
+    });
+    await loadProjects();
     setSelectedSlug(slug);
     setIsEditorOpen(false);
   };
 
-  const removeProject = () => {
+  const removeProject = async () => {
     if (!selectedProject || !isAdmin) return;
     const confirmed = window.confirm(`'${selectedProject.title}' 프로젝트를 삭제할까요?`);
     if (!confirmed) return;
 
-    const updated = projectItems.filter((project) => project.slug !== selectedProject.slug);
-    setProjectItems(updated);
-    setSelectedSlug(updated[0]?.slug || '');
+    await fetch(`/api/projects/${selectedProject.slug}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    await loadProjects();
+    setSelectedSlug('');
     setIsDetailOpen(false);
   };
+
+  if (loading) return <div className="layout"><p>로딩 중...</p></div>;
 
   return (
     <div className="layout pastel-bg">
@@ -332,23 +316,15 @@ function App() {
           <div className="toolbar">
             {isAdmin ? (
               <>
-                <button type="button" className="primary" onClick={openCreateModal}>
-                  프로젝트 추가
-                </button>
-                <button type="button" className="ghost" onClick={handleAdminLogout}>
-                  관리자 로그아웃
-                </button>
+                <button type="button" className="primary" onClick={openCreateModal}>프로젝트 추가</button>
+                <button type="button" className="ghost" onClick={handleAdminLogout}>관리자 로그아웃</button>
               </>
             ) : (
-              <button type="button" className="ghost" onClick={() => setIsLoginOpen(true)}>
-                관리자 로그인
-              </button>
+              <button type="button" className="ghost" onClick={() => setIsLoginOpen(true)}>관리자 로그인</button>
             )}
             <div className="filters" role="group" aria-label="status filter">
               {statusOptions.map((status) => (
-                <button key={status} type="button" className={statusFilter === status ? 'active' : ''} onClick={() => setStatusFilter(status)}>
-                  {status}
-                </button>
+                <button key={status} type="button" className={statusFilter === status ? 'active' : ''} onClick={() => setStatusFilter(status)}>{status}</button>
               ))}
             </div>
           </div>
@@ -358,13 +334,7 @@ function App() {
           {filteredProjects.map((project, index) => {
             const [from, to] = pastelPalette[index % pastelPalette.length];
             return (
-              <button
-                key={project.slug}
-                type="button"
-                className="tile-card"
-                style={{ background: `linear-gradient(145deg, ${from}, ${to})` }}
-                onClick={() => openDetailModal(project)}
-              >
+              <button key={project.slug} type="button" className="tile-card" style={{ background: `linear-gradient(145deg, ${from}, ${to})` }} onClick={() => { setSelectedSlug(project.slug); setIsDetailOpen(true); }}>
                 <div className="tile-top">
                   <span className="badge">{project.category}</span>
                   <span className="status">{project.status}</span>
@@ -379,61 +349,18 @@ function App() {
       </section>
 
       {isDetailOpen && selectedProject && (
-        <div className="modal-overlay" onClick={closeDetailModal}>
+        <div className="modal-overlay" onClick={() => setIsDetailOpen(false)}>
           <section className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="section-head">
-              <h2>{selectedProject.title}</h2>
-              <button type="button" className="ghost" onClick={closeDetailModal}>
-                닫기
-              </button>
-            </div>
+            <div className="section-head"><h2>{selectedProject.title}</h2><button type="button" className="ghost" onClick={() => setIsDetailOpen(false)}>닫기</button></div>
             <p className="period">기간: {selectedProject.period}</p>
             <RadarChart stats={selectedProject.stats} />
-
-            <div className="detail-block">
-              <h3>무엇을 위해 작업했는가</h3>
-              <p>{selectedProject.goal}</p>
-            </div>
-            <div className="detail-block">
-              <h3>어떻게 구현했는가</h3>
-              <p>{selectedProject.implementation}</p>
-            </div>
-            <div className="detail-block">
-              <h3>성과</h3>
-              <ul>
-                {selectedProject.metrics.map((metric) => (
-                  <li key={metric.label}>
-                    <strong>{metric.label}:</strong> {metric.value}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
+            <div className="detail-block"><h3>무엇을 위해 작업했는가</h3><p>{selectedProject.goal}</p></div>
+            <div className="detail-block"><h3>어떻게 구현했는가</h3><p>{selectedProject.implementation}</p></div>
+            <div className="detail-block"><h3>성과</h3><ul>{selectedProject.metrics.map((m) => <li key={m.label}><strong>{m.label}:</strong> {m.value}</li>)}</ul></div>
             <div className="actions">
-              {isAdmin && (
-                <>
-                  <button type="button" className="ghost" onClick={openEditModal}>
-                    수정
-                  </button>
-                  <button type="button" className="danger" onClick={removeProject}>
-                    삭제
-                  </button>
-                </>
-              )}
-              {selectedProject.liveUrl ? (
-                <a href={selectedProject.liveUrl} target="_blank" rel="noreferrer">
-                  서비스 이용하기
-                </a>
-              ) : (
-                <span className="disabled-link">현재 공개 서비스 없음</span>
-              )}
-              {selectedProject.repoUrl ? (
-                <a href={selectedProject.repoUrl} target="_blank" rel="noreferrer">
-                  저장소 보기
-                </a>
-              ) : (
-                <span className="disabled-link">비공개 또는 미공개 저장소</span>
-              )}
+              {isAdmin && <><button type="button" className="ghost" onClick={openEditModal}>수정</button><button type="button" className="danger" onClick={removeProject}>삭제</button></>}
+              {selectedProject.liveUrl ? <a href={selectedProject.liveUrl} target="_blank" rel="noreferrer">서비스 이용하기</a> : <span className="disabled-link">현재 공개 서비스 없음</span>}
+              {selectedProject.repoUrl ? <a href={selectedProject.repoUrl} target="_blank" rel="noreferrer">저장소 보기</a> : <span className="disabled-link">비공개 또는 미공개 저장소</span>}
             </div>
           </section>
         </div>
@@ -442,57 +369,29 @@ function App() {
       {isEditorOpen && isAdmin && (
         <div className="modal-overlay" onClick={closeEditorModal}>
           <section className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="section-head">
-              <h2>{editingSlug ? '프로젝트 수정' : '프로젝트 추가'}</h2>
-              <button type="button" className="ghost" onClick={closeEditorModal}>
-                닫기
-              </button>
-            </div>
-
+            <div className="section-head"><h2>{editingSlug ? '프로젝트 수정' : '프로젝트 추가'}</h2><button type="button" className="ghost" onClick={closeEditorModal}>닫기</button></div>
             <form className="project-form" onSubmit={handleSubmit}>
               <input placeholder="프로젝트 제목*" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
               <div className="inline-fields">
                 <input placeholder="카테고리" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                  {statusOptions.filter((s) => s !== '전체').map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>{statusOptions.filter((s) => s !== '전체').map((status) => <option key={status} value={status}>{status}</option>)}</select>
                 <input placeholder="기간" value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} />
               </div>
               <textarea placeholder="한 줄 요약*" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} rows={2} />
-            
+              <textarea placeholder="목표*" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} rows={2} />
               <textarea placeholder="구현 내용*" value={form.implementation} onChange={(e) => setForm({ ...form, implementation: e.target.value })} rows={3} />
               <input placeholder="기술 스택* (쉼표)" value={form.stack} onChange={(e) => setForm({ ...form, stack: e.target.value })} />
-
               <div className="inline-fields">
-                <label>
-                  구현 난이도 (1~5)
-                  <input type="number" min="1" max="5" value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })} />
-                </label>
-                <label>
-                  신기술 사용도 (1~5)
-                  <input type="number" min="1" max="5" value={form.novelty} onChange={(e) => setForm({ ...form, novelty: e.target.value })} />
-                </label>
-                <label>
-                  사용자 임팩트 (1~5)
-                  <input type="number" min="1" max="5" value={form.impact} onChange={(e) => setForm({ ...form, impact: e.target.value })} />
-                </label>
-                <label>
-                  확장성 (1~5)
-                  <input type="number" min="1" max="5" value={form.scalability} onChange={(e) => setForm({ ...form, scalability: e.target.value })} />
-                </label>
+                <label>구현 난이도 (1~5)<input type="number" min="1" max="5" value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })} /></label>
+                <label>신기술 사용도 (1~5)<input type="number" min="1" max="5" value={form.novelty} onChange={(e) => setForm({ ...form, novelty: e.target.value })} /></label>
+                <label>사용자 임팩트 (1~5)<input type="number" min="1" max="5" value={form.impact} onChange={(e) => setForm({ ...form, impact: e.target.value })} /></label>
+                <label>확장성 (1~5)<input type="number" min="1" max="5" value={form.scalability} onChange={(e) => setForm({ ...form, scalability: e.target.value })} /></label>
               </div>
-
               <div className="inline-fields">
                 <input placeholder="운영 서비스 URL (선택)" value={form.liveUrl} onChange={(e) => setForm({ ...form, liveUrl: e.target.value })} />
                 <input placeholder="저장소 URL (선택)" value={form.repoUrl} onChange={(e) => setForm({ ...form, repoUrl: e.target.value })} />
               </div>
-              <button type="submit" className="primary">
-                {editingSlug ? '수정 저장' : '프로젝트 추가'}
-              </button>
+              <button type="submit" className="primary">{editingSlug ? '수정 저장' : '프로젝트 추가'}</button>
             </form>
           </section>
         </div>
@@ -504,16 +403,10 @@ function App() {
             <h3>관리자 로그인</h3>
             <p className="auth-help">수정/삭제/추가는 관리자만 가능합니다.</p>
             <form onSubmit={handleAdminLogin} className="project-form">
-              <input
-                type="password"
-                placeholder="관리자 비밀번호"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-              />
+              <input placeholder="관리자 아이디" value={adminUsername} onChange={(e) => setAdminUsername(e.target.value)} />
+              <input type="password" placeholder="관리자 비밀번호" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
               {authError && <p className="auth-error">{authError}</p>}
-              <button type="submit" className="primary">
-                로그인
-              </button>
+              <button type="submit" className="primary">로그인</button>
             </form>
           </section>
         </div>
