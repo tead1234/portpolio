@@ -10,7 +10,7 @@ npm run dev
 ```
 
 - 프론트엔드(Vite): `http://localhost:5173`
-- API 서버(Express + SQLite): `http://localhost:3001`
+- API 서버(Express + SQLite): `http://localhost:3001` (개발 모드)
 
 ## Docker로 실행 (권장)
 
@@ -19,7 +19,7 @@ docker compose up --build
 ```
 
 브라우저 접속:
-- `http://localhost:8080`
+- `http://localhost`
 
 ## 데이터 저장 위치
 

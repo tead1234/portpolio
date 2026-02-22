@@ -16,5 +16,5 @@ COPY server.js ./server.js
 COPY src/data/projects.js ./src/data/projects.js
 RUN mkdir -p data
 
-EXPOSE 3001
+EXPOSE 80
 CMD ["npm", "run", "start"]
