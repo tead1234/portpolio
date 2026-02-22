@@ -463,7 +463,7 @@ function App() {
                 <input placeholder="기간" value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} />
               </div>
               <textarea placeholder="한 줄 요약*" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} rows={2} />
-              <textarea placeholder="목표*" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} rows={2} />
+            
               <textarea placeholder="구현 내용*" value={form.implementation} onChange={(e) => setForm({ ...form, implementation: e.target.value })} rows={3} />
               <input placeholder="기술 스택* (쉼표)" value={form.stack} onChange={(e) => setForm({ ...form, stack: e.target.value })} />
 
