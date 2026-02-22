@@ -3,6 +3,8 @@ import { projects as initialProjects } from './data/projects';
 
 const statusOptions = ['전체', '운영중', '완료', 'PoC'];
 const STORAGE_KEY = 'portfolio-projects-v3';
+const ADMIN_SESSION_KEY = 'portfolio-admin-session-v1';
+const ADMIN_PASSWORD = 'admin1234';
 
 const emptyForm = {
   title: '',
@@ -13,7 +15,6 @@ const emptyForm = {
   goal: '',
   implementation: '',
   stack: '',
-  metrics: '',
   liveUrl: '',
   repoUrl: '',
   difficulty: '3',
@@ -63,18 +64,12 @@ const serializeForm = (form) => ({
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean),
-  metrics: form.metrics
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [label, ...rest] = line.split(':');
-      return {
-        label: (label || '').trim(),
-        value: rest.join(':').trim()
-      };
-    })
-    .filter((metric) => metric.label && metric.value),
+  metrics: [
+    { label: '구현 난이도', value: `${clamp5(form.difficulty)}/5` },
+    { label: '신기술 사용도', value: `${clamp5(form.novelty)}/5` },
+    { label: '사용자 임팩트', value: `${clamp5(form.impact)}/5` },
+    { label: '확장성', value: `${clamp5(form.scalability)}/5` }
+  ],
   liveUrl: form.liveUrl.trim(),
   repoUrl: form.repoUrl.trim(),
   stats: {
@@ -94,7 +89,6 @@ const fillFormFromProject = (project) => ({
   goal: project.goal,
   implementation: project.implementation,
   stack: project.stack.join(', '),
-  metrics: project.metrics.map((metric) => `${metric.label}: ${metric.value}`).join('\n'),
   liveUrl: project.liveUrl,
   repoUrl: project.repoUrl,
   difficulty: String(project.stats.difficulty),
@@ -202,6 +196,10 @@ function App() {
   const [editingSlug, setEditingSlug] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => window.localStorage.getItem(ADMIN_SESSION_KEY) === 'true');
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [authError, setAuthError] = useState('');
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projectItems));
@@ -223,12 +221,16 @@ function App() {
   };
 
   const openCreateModal = () => {
+    if (!isAdmin) {
+      setIsLoginOpen(true);
+      return;
+    }
     resetForm();
     setIsEditorOpen(true);
   };
 
   const openEditModal = () => {
-    if (!selectedProject) return;
+    if (!selectedProject || !isAdmin) return;
     setForm(fillFormFromProject(selectedProject));
     setEditingSlug(selectedProject.slug);
     setIsEditorOpen(true);
@@ -246,17 +248,38 @@ function App() {
 
   const closeDetailModal = () => setIsDetailOpen(false);
 
+  const handleAdminLogin = (event) => {
+    event.preventDefault();
+    if (adminPassword !== ADMIN_PASSWORD) {
+      setAuthError('관리자 비밀번호가 올바르지 않습니다.');
+      return;
+    }
+    window.localStorage.setItem(ADMIN_SESSION_KEY, 'true');
+    setIsAdmin(true);
+    setIsLoginOpen(false);
+    setAdminPassword('');
+    setAuthError('');
+  };
+
+  const handleAdminLogout = () => {
+    window.localStorage.removeItem(ADMIN_SESSION_KEY);
+    setIsAdmin(false);
+    setIsEditorOpen(false);
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
+    if (!isAdmin) return;
+
     const next = serializeForm(form);
 
-    if (!next.title || !next.summary || !next.goal || !next.implementation || !next.repoUrl) {
-      alert('제목, 요약, 목표, 구현, 저장소 URL은 필수입니다.');
+    if (!next.title || !next.summary || !next.goal || !next.implementation) {
+      alert('제목, 요약, 목표, 구현 내용은 필수입니다.');
       return;
     }
 
-    if (next.stack.length === 0 || next.metrics.length === 0) {
-      alert('기술 스택과 성과 지표를 최소 1개 이상 입력하세요.');
+    if (next.stack.length === 0) {
+      alert('기술 스택을 최소 1개 이상 입력하세요.');
       return;
     }
 
@@ -285,7 +308,7 @@ function App() {
   };
 
   const removeProject = () => {
-    if (!selectedProject) return;
+    if (!selectedProject || !isAdmin) return;
     const confirmed = window.confirm(`'${selectedProject.title}' 프로젝트를 삭제할까요?`);
     if (!confirmed) return;
 
@@ -299,6 +322,7 @@ function App() {
     <div className="layout pastel-bg">
       <header className="hero soft-card">
         <p className="hero-kicker">PORTFOLIO</p>
+        <h1>Portpolio</h1>
         <p className="hero-subtitle">프로덕트 엔지니어로서 고명섭이 만든 것들</p>
       </header>
 
@@ -306,9 +330,20 @@ function App() {
         <div className="section-head">
           <h2>Projects</h2>
           <div className="toolbar">
-            <button type="button" className="primary" onClick={openCreateModal}>
-              프로젝트 추가
-            </button>
+            {isAdmin ? (
+              <>
+                <button type="button" className="primary" onClick={openCreateModal}>
+                  프로젝트 추가
+                </button>
+                <button type="button" className="ghost" onClick={handleAdminLogout}>
+                  관리자 로그아웃
+                </button>
+              </>
+            ) : (
+              <button type="button" className="ghost" onClick={() => setIsLoginOpen(true)}>
+                관리자 로그인
+              </button>
+            )}
             <div className="filters" role="group" aria-label="status filter">
               {statusOptions.map((status) => (
                 <button key={status} type="button" className={statusFilter === status ? 'active' : ''} onClick={() => setStatusFilter(status)}>
@@ -375,12 +410,16 @@ function App() {
             </div>
 
             <div className="actions">
-              <button type="button" className="ghost" onClick={openEditModal}>
-                수정
-              </button>
-              <button type="button" className="danger" onClick={removeProject}>
-                삭제
-              </button>
+              {isAdmin && (
+                <>
+                  <button type="button" className="ghost" onClick={openEditModal}>
+                    수정
+                  </button>
+                  <button type="button" className="danger" onClick={removeProject}>
+                    삭제
+                  </button>
+                </>
+              )}
               {selectedProject.liveUrl ? (
                 <a href={selectedProject.liveUrl} target="_blank" rel="noreferrer">
                   서비스 이용하기
@@ -388,15 +427,19 @@ function App() {
               ) : (
                 <span className="disabled-link">현재 공개 서비스 없음</span>
               )}
-              <a href={selectedProject.repoUrl} target="_blank" rel="noreferrer">
-                저장소 보기
-              </a>
+              {selectedProject.repoUrl ? (
+                <a href={selectedProject.repoUrl} target="_blank" rel="noreferrer">
+                  저장소 보기
+                </a>
+              ) : (
+                <span className="disabled-link">비공개 또는 미공개 저장소</span>
+              )}
             </div>
           </section>
         </div>
       )}
 
-      {isEditorOpen && (
+      {isEditorOpen && isAdmin && (
         <div className="modal-overlay" onClick={closeEditorModal}>
           <section className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="section-head">
@@ -423,7 +466,6 @@ function App() {
               <textarea placeholder="목표*" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} rows={2} />
               <textarea placeholder="구현 내용*" value={form.implementation} onChange={(e) => setForm({ ...form, implementation: e.target.value })} rows={3} />
               <input placeholder="기술 스택* (쉼표)" value={form.stack} onChange={(e) => setForm({ ...form, stack: e.target.value })} />
-              <textarea placeholder="성과 지표* (형식: 항목: 값)" value={form.metrics} onChange={(e) => setForm({ ...form, metrics: e.target.value })} rows={3} />
 
               <div className="inline-fields">
                 <label>
@@ -445,11 +487,32 @@ function App() {
               </div>
 
               <div className="inline-fields">
-                <input placeholder="운영 서비스 URL" value={form.liveUrl} onChange={(e) => setForm({ ...form, liveUrl: e.target.value })} />
-                <input placeholder="저장소 URL*" value={form.repoUrl} onChange={(e) => setForm({ ...form, repoUrl: e.target.value })} />
+                <input placeholder="운영 서비스 URL (선택)" value={form.liveUrl} onChange={(e) => setForm({ ...form, liveUrl: e.target.value })} />
+                <input placeholder="저장소 URL (선택)" value={form.repoUrl} onChange={(e) => setForm({ ...form, repoUrl: e.target.value })} />
               </div>
               <button type="submit" className="primary">
                 {editingSlug ? '수정 저장' : '프로젝트 추가'}
+              </button>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {isLoginOpen && (
+        <div className="modal-overlay" onClick={() => setIsLoginOpen(false)}>
+          <section className="modal auth-box" onClick={(e) => e.stopPropagation()}>
+            <h3>관리자 로그인</h3>
+            <p className="auth-help">수정/삭제/추가는 관리자만 가능합니다.</p>
+            <form onSubmit={handleAdminLogin} className="project-form">
+              <input
+                type="password"
+                placeholder="관리자 비밀번호"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+              />
+              {authError && <p className="auth-error">{authError}</p>}
+              <button type="submit" className="primary">
+                로그인
               </button>
             </form>
           </section>
