@@ -14,10 +14,16 @@ const emptyForm = {
   stack: '',
   liveUrl: '',
   repoUrl: '',
+  blogUrl: '',
+  evaluationMethod: '',
   difficulty: '3',
   novelty: '3',
   impact: '3',
-  scalability: '3'
+  scalability: '3',
+  difficultyReason: '',
+  noveltyReason: '',
+  impactReason: '',
+  scalabilityReason: ''
 };
 
 const pastelPalette = [
@@ -39,8 +45,33 @@ const toSlug = (text) =>
 
 const clamp5 = (value) => Math.min(5, Math.max(1, Number(value) || 1));
 
+const splitToLines = (text = '') =>
+  text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+const splitNumberedText = (text = '') => {
+  const normalized = text
+    .replace(/\s+(?=\d+\.)/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^\d+\.\s*/, '').trim())
+    .filter(Boolean);
+  return normalized;
+};
+
 const normalizeProject = (project) => ({
   ...project,
+  blogUrl: project?.blogUrl || '',
+  evaluationMethod: project?.evaluationMethod || '',
+  scoreReasons: {
+    difficulty: project?.scoreReasons?.difficulty || '',
+    novelty: project?.scoreReasons?.novelty || '',
+    impact: project?.scoreReasons?.impact || '',
+    scalability: project?.scoreReasons?.scalability || ''
+  },
   stats: {
     difficulty: clamp5(project?.stats?.difficulty ?? 3),
     novelty: clamp5(project?.stats?.novelty ?? 3),
@@ -67,6 +98,14 @@ const serializeForm = (form) => ({
     { label: '사용자 임팩트', value: `${clamp5(form.impact)}/5` },
     { label: '확장성', value: `${clamp5(form.scalability)}/5` }
   ],
+  blogUrl: form.blogUrl.trim(),
+  evaluationMethod: form.evaluationMethod.trim(),
+  scoreReasons: {
+    difficulty: form.difficultyReason.trim(),
+    novelty: form.noveltyReason.trim(),
+    impact: form.impactReason.trim(),
+    scalability: form.scalabilityReason.trim()
+  },
   liveUrl: form.liveUrl.trim(),
   repoUrl: form.repoUrl.trim(),
   stats: {
@@ -88,10 +127,16 @@ const fillFormFromProject = (project) => ({
   stack: project.stack.join(', '),
   liveUrl: project.liveUrl,
   repoUrl: project.repoUrl,
+  blogUrl: project.blogUrl || '',
+  evaluationMethod: project.evaluationMethod || '',
   difficulty: String(project.stats.difficulty),
   novelty: String(project.stats.novelty),
   impact: String(project.stats.impact),
-  scalability: String(project.stats.scalability)
+  scalability: String(project.stats.scalability),
+  difficultyReason: project?.scoreReasons?.difficulty || '',
+  noveltyReason: project?.scoreReasons?.novelty || '',
+  impactReason: project?.scoreReasons?.impact || '',
+  scalabilityReason: project?.scoreReasons?.scalability || ''
 });
 
 function RadarChart({ stats }) {
@@ -147,13 +192,6 @@ function RadarChart({ stats }) {
           <circle key={axes[idx].key} cx={p.x} cy={p.y} r="3" fill="#6d28d9" />
         ))}
       </svg>
-
-      <div className="spark-legend">
-        <span>구현 난이도 {stats.difficulty}/5</span>
-        <span>신기술 사용도 {stats.novelty}/5</span>
-        <span>사용자 임팩트 {stats.impact}/5</span>
-        <span>확장성 {stats.scalability}/5</span>
-      </div>
     </div>
   );
 }
@@ -353,14 +391,43 @@ function App() {
           <section className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="section-head"><h2>{selectedProject.title}</h2><button type="button" className="ghost" onClick={() => setIsDetailOpen(false)}>닫기</button></div>
             <p className="period">기간: {selectedProject.period}</p>
-            <RadarChart stats={selectedProject.stats} />
-            <div className="detail-block"><h3>무엇을 위해 작업했는가</h3><p>{selectedProject.goal}</p></div>
-            <div className="detail-block"><h3>어떻게 구현했는가</h3><p>{selectedProject.implementation}</p></div>
-            <div className="detail-block"><h3>성과</h3><ul>{selectedProject.metrics.map((m) => <li key={m.label}><strong>{m.label}:</strong> {m.value}</li>)}</ul></div>
+
+            <div className="detail-layout">
+              <RadarChart stats={selectedProject.stats} />
+              <div className="metric-grid">
+                <div className="metric-card"><strong>구현 난이도 {selectedProject.stats.difficulty}/5</strong><p>{selectedProject.scoreReasons?.difficulty || '평가 근거 미입력'}</p></div>
+                <div className="metric-card"><strong>신기술 사용도 {selectedProject.stats.novelty}/5</strong><p>{selectedProject.scoreReasons?.novelty || '평가 근거 미입력'}</p></div>
+                <div className="metric-card"><strong>사용자 임팩트 {selectedProject.stats.impact}/5</strong><p>{selectedProject.scoreReasons?.impact || '평가 근거 미입력'}</p></div>
+                <div className="metric-card"><strong>확장성 {selectedProject.stats.scalability}/5</strong><p>{selectedProject.scoreReasons?.scalability || '평가 근거 미입력'}</p></div>
+              </div>
+            </div>
+
+            <div className="detail-block">
+              <h3>무엇을 위해 작업했는가</h3>
+              {splitToLines(selectedProject.goal).map((line, idx) => (
+                <p key={`goal-${idx}`}>{line}</p>
+              ))}
+            </div>
+
+            <div className="detail-block">
+              <h3>어떻게 구현했는가</h3>
+              <ol>
+                {splitNumberedText(selectedProject.implementation).map((line, idx) => (
+                  <li key={`impl-${idx}`}>{line}</li>
+                ))}
+              </ol>
+            </div>
+
+            <div className="detail-block">
+              <h3>평가 방법</h3>
+              <p>{selectedProject.evaluationMethod || '평가 방법이 아직 입력되지 않았습니다.'}</p>
+            </div>
+
             <div className="actions">
               {isAdmin && <><button type="button" className="ghost" onClick={openEditModal}>수정</button><button type="button" className="danger" onClick={removeProject}>삭제</button></>}
               {selectedProject.liveUrl ? <a href={selectedProject.liveUrl} target="_blank" rel="noreferrer">서비스 이용하기</a> : <span className="disabled-link">현재 공개 서비스 없음</span>}
               {selectedProject.repoUrl ? <a href={selectedProject.repoUrl} target="_blank" rel="noreferrer">저장소 보기</a> : <span className="disabled-link">비공개 또는 미공개 저장소</span>}
+              {selectedProject.blogUrl ? <a href={selectedProject.blogUrl} target="_blank" rel="noreferrer">관련 블로그</a> : <span className="disabled-link">관련 블로그 없음</span>}
             </div>
           </section>
         </div>
@@ -378,8 +445,9 @@ function App() {
                 <input placeholder="기간" value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} />
               </div>
               <textarea placeholder="한 줄 요약*" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} rows={2} />
-              <textarea placeholder="목표*" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} rows={2} />
-              <textarea placeholder="구현 내용*" value={form.implementation} onChange={(e) => setForm({ ...form, implementation: e.target.value })} rows={3} />
+              <textarea placeholder="목표* (줄바꿈 가능)" value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} rows={3} />
+              <textarea placeholder="구현 내용* (번호로 구분 가능: 1. 2. 3.)" value={form.implementation} onChange={(e) => setForm({ ...form, implementation: e.target.value })} rows={4} />
+              <textarea placeholder="평가 방법 (예: A/B 테스트, 인터뷰, 로그 분석 방식)" value={form.evaluationMethod} onChange={(e) => setForm({ ...form, evaluationMethod: e.target.value })} rows={3} />
               <input placeholder="기술 스택* (쉼표)" value={form.stack} onChange={(e) => setForm({ ...form, stack: e.target.value })} />
               <div className="inline-fields">
                 <label>구현 난이도 (1~5)<input type="number" min="1" max="5" value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })} /></label>
@@ -388,8 +456,15 @@ function App() {
                 <label>확장성 (1~5)<input type="number" min="1" max="5" value={form.scalability} onChange={(e) => setForm({ ...form, scalability: e.target.value })} /></label>
               </div>
               <div className="inline-fields">
+                <input placeholder="구현 난이도 평가 근거" value={form.difficultyReason} onChange={(e) => setForm({ ...form, difficultyReason: e.target.value })} />
+                <input placeholder="신기술 사용도 평가 근거" value={form.noveltyReason} onChange={(e) => setForm({ ...form, noveltyReason: e.target.value })} />
+                <input placeholder="사용자 임팩트 평가 근거" value={form.impactReason} onChange={(e) => setForm({ ...form, impactReason: e.target.value })} />
+                <input placeholder="확장성 평가 근거" value={form.scalabilityReason} onChange={(e) => setForm({ ...form, scalabilityReason: e.target.value })} />
+              </div>
+              <div className="inline-fields">
                 <input placeholder="운영 서비스 URL (선택)" value={form.liveUrl} onChange={(e) => setForm({ ...form, liveUrl: e.target.value })} />
                 <input placeholder="저장소 URL (선택)" value={form.repoUrl} onChange={(e) => setForm({ ...form, repoUrl: e.target.value })} />
+                <input placeholder="관련 블로그 URL (선택)" value={form.blogUrl} onChange={(e) => setForm({ ...form, blogUrl: e.target.value })} />
               </div>
               <button type="submit" className="primary">{editingSlug ? '수정 저장' : '프로젝트 추가'}</button>
             </form>
