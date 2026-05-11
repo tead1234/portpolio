@@ -13,9 +13,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'portfolio-secret-key';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin1234';
 
-const dataDir = path.join(__dirname, 'data');
+const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
 fs.mkdirSync(dataDir, { recursive: true });
-const dbPath = path.join(dataDir, 'portfolio.db');
+const dbPath = process.env.DB_PATH || path.join(dataDir, 'portfolio.db');
 
 const db = new sqlite3.Database(dbPath);
 
@@ -65,12 +65,12 @@ const normalizeProject = (project) => ({
 const initDb = async () => {
   await run('CREATE TABLE IF NOT EXISTS projects (slug TEXT PRIMARY KEY, data TEXT NOT NULL)');
   await run('CREATE TABLE IF NOT EXISTS admins (username TEXT PRIMARY KEY, password TEXT NOT NULL)');
+  await run('PRAGMA journal_mode = WAL');
 
   const admin = await get('SELECT username FROM admins WHERE username = ?', [ADMIN_USERNAME]);
   if (!admin) {
     await run('INSERT INTO admins (username, password) VALUES (?, ?)', [ADMIN_USERNAME, ADMIN_PASSWORD]);
   }
-
 };
 
 const authRequired = (req, res, next) => {
@@ -92,36 +92,57 @@ app.use(express.json());
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-app.post('/api/admin/login', async (req, res) => {
-  const { username, password } = req.body || {};
-  const row = await get('SELECT username FROM admins WHERE username = ? AND password = ?', [username, password]);
-  if (!row) return res.status(401).json({ message: 'Invalid credentials' });
+app.post('/api/admin/login', async (req, res, next) => {
+  try {
+    const { username, password } = req.body || {};
+    const row = await get('SELECT username FROM admins WHERE username = ? AND password = ?', [username, password]);
+    if (!row) return res.status(401).json({ message: 'Invalid credentials' });
 
-  const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '12h' });
-  res.json({ token, username });
+    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '12h' });
+    res.json({ token, username });
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.get('/api/projects', async (_req, res) => {
-  const rows = await all('SELECT data FROM projects ORDER BY rowid DESC');
-  res.json(rows.map((row) => JSON.parse(row.data)));
+app.get('/api/projects', async (_req, res, next) => {
+  try {
+    const rows = await all('SELECT data FROM projects ORDER BY rowid DESC');
+    res.json(rows.map((row) => JSON.parse(row.data)));
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.post('/api/projects', authRequired, async (req, res) => {
-  const project = normalizeProject(req.body || {});
-  if (!project.slug) return res.status(400).json({ message: 'slug is required' });
-  await run('INSERT INTO projects (slug, data) VALUES (?, ?)', [project.slug, JSON.stringify(project)]);
-  res.status(201).json(project);
+app.post('/api/projects', authRequired, async (req, res, next) => {
+  try {
+    const project = normalizeProject(req.body || {});
+    if (!project.slug) return res.status(400).json({ message: 'slug is required' });
+    await run('INSERT INTO projects (slug, data) VALUES (?, ?)', [project.slug, JSON.stringify(project)]);
+    res.status(201).json(project);
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT') return res.status(409).json({ message: 'duplicate slug' });
+    next(error);
+  }
 });
 
-app.put('/api/projects/:slug', authRequired, async (req, res) => {
-  const project = normalizeProject({ ...req.body, slug: req.params.slug });
-  await run('UPDATE projects SET data = ? WHERE slug = ?', [JSON.stringify(project), req.params.slug]);
-  res.json(project);
+app.put('/api/projects/:slug', authRequired, async (req, res, next) => {
+  try {
+    const project = normalizeProject({ ...req.body, slug: req.params.slug });
+    await run('UPDATE projects SET data = ? WHERE slug = ?', [JSON.stringify(project), req.params.slug]);
+    res.json(project);
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.delete('/api/projects/:slug', authRequired, async (req, res) => {
-  await run('DELETE FROM projects WHERE slug = ?', [req.params.slug]);
-  res.status(204).send();
+app.delete('/api/projects/:slug', authRequired, async (req, res, next) => {
+  try {
+    await run('DELETE FROM projects WHERE slug = ?', [req.params.slug]);
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
 });
 
 const distDir = path.join(__dirname, 'dist');
@@ -132,6 +153,11 @@ if (fs.existsSync(distDir)) {
     res.sendFile(path.join(distDir, 'index.html'));
   });
 }
+
+app.use((error, _req, res, _next) => {
+  console.error(error);
+  res.status(500).json({ message: 'Internal server error' });
+});
 
 initDb().then(() => {
   app.listen(PORT, () => {

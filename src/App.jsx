@@ -286,6 +286,14 @@ function App() {
     setIsEditorOpen(false);
   };
 
+  const handleUnauthorized = () => {
+    window.localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setAdminToken('');
+    setIsEditorOpen(false);
+    setIsLoginOpen(true);
+    setAuthError('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!isAdmin) return;
@@ -295,11 +303,19 @@ function App() {
     if (next.stack.length === 0) return alert('기술 스택을 최소 1개 이상 입력하세요.');
 
     if (editingSlug) {
-      await fetch(`/api/projects/${editingSlug}`, {
+      const res = await fetch(`/api/projects/${editingSlug}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({ ...next, slug: editingSlug })
       });
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return alert(data.message || '프로젝트 수정 중 오류가 발생했습니다.');
+      }
       await loadProjects();
       setSelectedSlug(editingSlug);
       setIsEditorOpen(false);
@@ -314,13 +330,37 @@ function App() {
       suffix += 1;
     }
 
-    await fetch('/api/projects', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
-      body: JSON.stringify({ ...next, slug })
-    });
+    let createdSlug = slug;
+    let created = false;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ ...next, slug: createdSlug })
+      });
+      if (res.ok) {
+        created = true;
+        break;
+      }
+
+      if (res.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+
+      if (res.status === 409) {
+        createdSlug = `${baseSlug || 'project'}-${Date.now()}-${attempt + 1}`;
+        continue;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      return alert(data.message || '프로젝트 등록 중 오류가 발생했습니다.');
+    }
+
+    if (!created) return alert('중복되지 않는 프로젝트 slug를 생성하지 못했습니다. 제목을 바꿔 다시 시도해주세요.');
+
     await loadProjects();
-    setSelectedSlug(slug);
+    setSelectedSlug(createdSlug);
     setIsEditorOpen(false);
   };
 
@@ -329,10 +369,18 @@ function App() {
     const confirmed = window.confirm(`'${selectedProject.title}' 프로젝트를 삭제할까요?`);
     if (!confirmed) return;
 
-    await fetch(`/api/projects/${selectedProject.slug}`, {
+    const res = await fetch(`/api/projects/${selectedProject.slug}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${adminToken}` }
     });
+    if (res.status === 401) {
+      handleUnauthorized();
+      return;
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return alert(data.message || '프로젝트 삭제 중 오류가 발생했습니다.');
+    }
     await loadProjects();
     setSelectedSlug('');
     setIsDetailOpen(false);
